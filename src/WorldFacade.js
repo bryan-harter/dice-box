@@ -3,12 +3,12 @@ import physicsWorker from './components/physics.worker.js?worker&inline'
 import { debounce, createAsyncQueue, Random, hexToRGB, webgl_support } from './helpers'
 
 const defaultOptions = {
-	id: `dice-canvas-${Date.now()}`, // set the canvas id
+	id: `dice-box`, // set the canvas id
 	container: null,
   enableShadows: true, // do dice cast shadows onto DiceBox mesh?
 	shadowTransparency: .8,
 	lightIntensity: 1,
-  delay: 10, // delay between dice being generated - 0 causes stuttering and physics popping
+  delay: 15, // frame delay between dice being generated - 0 causes stuttering and physics popping
 	scale: 5, // scale the dice
 	theme: 'default', // can be a hex color or a pre-defined theme such as 'purpleRock'
 	preloadThemes: [],
@@ -460,7 +460,7 @@ class WorldFacade {
 	}
 
 	// TODO: pass data with roll - such as roll name. Passed back at the end in the results
-	roll(notation, {theme = this.config.theme, themeColor = this.config.themeColor, newStartPoint = true} = {}) {
+	roll(notation, random_seed, {theme = this.config.theme, themeColor = this.config.themeColor, newStartPoint = true} = {}) {
 		// note: to add to a roll on screen use .add method
 		// reset the offscreen worker and physics worker with each new roll
 		this.clear()
@@ -471,7 +471,8 @@ class WorldFacade {
 			notation,
 			theme,
 			themeColor,
-			newStartPoint
+			newStartPoint,
+			random_seed
 		})
 
 		const parsedNotation = this.createNotationArray(notation, this.themesLoadedData[theme].diceAvailable)
@@ -481,7 +482,7 @@ class WorldFacade {
 		return this.rollCollectionData[collectionId].promise
 	}
 
-  add(notation, {theme = this.config.theme, themeColor = this.config.themeColor, newStartPoint = true} = {}) {
+  add(notation, random_seed, {theme = this.config.theme, themeColor = this.config.themeColor, newStartPoint = true} = {}) {
 
 		const collectionId = this.#collectionIndex++
 
@@ -490,7 +491,8 @@ class WorldFacade {
 			notation,
 			theme,
 			themeColor,
-			newStartPoint
+			newStartPoint,
+			random_seed
 		})
 		
 		const parsedNotation = this.createNotationArray(notation, this.themesLoadedData[theme].diceAvailable)
@@ -620,7 +622,8 @@ class WorldFacade {
 					id,
 					theme,
 					themeColor,
-					meshName
+					meshName,
+					random_seed: collection.random_seed + i
 				}
 
 				rolls[rollId] = roll

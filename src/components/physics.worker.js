@@ -1,10 +1,11 @@
 import { lerp } from '../helpers'
-import AmmoJS from "../ammo/ammo.wasm.es.js"
+import { AmmoModule } from "../ammo/ammo_custom.js";
 
 // Firefox limitation: https://github.com/vitejs/vite/issues/4586
 
 // there's probably a better place for these variables
 let bodies = []
+let bodiesQueue = []
 let sleepingBodies = []
 let colliders = {}
 let physicsWorld
@@ -16,6 +17,7 @@ let width = 150
 let height = 150
 let aspect = 1
 let stopLoop = false
+let frame_delay = 15 //Steps to delay the addition of die
 
 const defaultOptions = {
 	size: 9.5,
@@ -36,6 +38,12 @@ let config = {...defaultOptions}
 
 let emptyVector
 let diceBufferView
+
+// Simple seeded random number generator
+function seededRandom(seed1, seed2) {
+    const x = Math.sin(seed1+seed2) * 10000;
+    return x - Math.floor(x);
+}
 
 self.onmessage = (e) => {
   switch (e.data.action) {
@@ -80,10 +88,9 @@ self.onmessage = (e) => {
 						// toss from all edges
 						// setStartPosition()
 						if(e.data.options.newStartPoint){
-							setStartPosition()
+							setStartPosition(e.data.options.random_seed)
 						}
-            const newDie = addDie(e.data.options)
-						rollDie(newDie)
+            			addDie(e.data.options)
             break;
           case "rollDie":
 						// TODO: this won't work, need a die object
@@ -159,12 +166,12 @@ const init = async (data) => {
 	config.throwForce = computeThrowForce(config.throwForce,config.mass,config.scale)
 	config.startingHeight = computeStartingHeight(config.startingHeight)
 
-	const ammoWASM = {
-		// locateFile: () => '../../node_modules/ammo.js/builds/ammo.wasm.wasm'
-		locateFile: () => `${config.origin + config.assetPath}ammo/ammo.wasm.wasm`
+	const ammoConfig = {
+		locateFile: (file) => `${config.origin + config.assetPath}ammo/${file}`
 	}
 
-	Ammo = await new AmmoJS(ammoWASM)
+	Ammo = await AmmoModule(ammoConfig);
+
 
 	tmpBtTrans = new Ammo.btTransform()
 	sharedVector3 = new Ammo.btVector3(0, 0, 0)
@@ -231,7 +238,8 @@ const setVector3 = (x,y,z) => {
 	return sharedVector3
 }
 
-const setStartPosition = () => {
+const setStartPosition = (random_seed) => {
+	random_seed = random_seed || Math.random()
 	let size = config.size
 	// let envelopeSize = size * .6 / 2
 	let edgeOffset = .5
@@ -240,11 +248,11 @@ const setStartPosition = () => {
 	let yMin = size / 2 - edgeOffset
 	let yMax = size / -2 + edgeOffset
 	// let xEnvelope = lerp(envelopeSize * aspect - edgeOffset * aspect, -envelopeSize * aspect + edgeOffset * aspect, Math.random())
-	let xEnvelope = lerp(xMin, xMax, Math.random())
-	let yEnvelope = lerp(yMin, yMax, Math.random())
-	let tossFromTop = Math.round(Math.random())
-	let tossFromLeft = Math.round(Math.random())
-	let tossX = Math.round(Math.random())
+	let xEnvelope = lerp(xMin, xMax, seededRandom(random_seed, 9))
+	let yEnvelope = lerp(yMin, yMax, seededRandom(random_seed, 10))
+	let tossFromTop = Math.round(seededRandom(random_seed, 11))
+	let tossFromLeft = Math.round(seededRandom(random_seed, 12))
+	let tossX = Math.round(seededRandom(random_seed, 13))
 	// console.log(`throw coming from`, tossX ? tossFromTop ? "top" : "bottom" : tossFromLeft ? "left" : "right")
 
 	// forces = {
@@ -280,7 +288,7 @@ const createConvexHull = (mesh) => {
 	return convexMesh
 }
 
-const createRigidBody = (collisionShape, params) => {
+const createRigidBody = (collisionShape, params, random_seed) => {
 	// apply params
 	const {
 		mass = .1,
@@ -290,9 +298,9 @@ const createRigidBody = (collisionShape, params) => {
 		pos = [0,0,0],
 		// quat = [0,0,0,-1],
 		quat = [
-			lerp(-1.5, 1.5, Math.random()),
-			lerp(-1.5, 1.5, Math.random()),
-			lerp(-1.5, 1.5, Math.random()),
+			lerp(-1.5, 1.5, seededRandom(random_seed, 1)),
+			lerp(-1.5, 1.5, seededRandom(random_seed, 2)),
+			lerp(-1.5, 1.5, seededRandom(random_seed, 3)),
 			-1
 		],
 		scale = [1,1,1],
@@ -447,14 +455,12 @@ const addDie = (options) => {
 		scaling: colliders[comboKey].scaling,
 		pos: config.startPosition,
 		// quat: colliders[cType].rotationQuaternion,
-	})
+	}, options.random_seed)
 	newDie.id = id
 	newDie.timeout = config.settleTimeout
 	newDie.mass = mass
-	physicsWorld.addRigidBody(newDie)
-	bodies.push(newDie)
-
-	return newDie
+	newDie.random_seed = options.random_seed
+	bodiesQueue.push(newDie)
 	// console.log(`added collider for `, type)
 	// rollDie(newDie)
 }
@@ -463,13 +469,13 @@ const rollDie = (die) => {
 
 	// lerp picks a random number between two values
 	die.setLinearVelocity(setVector3(
-		lerp(-config.startPosition[0] * .5, -config.startPosition[0] * config.throwForce, Math.random()),
-		lerp(-config.startPosition[1], -config.startPosition[1] * 2, Math.random()), // limit the y force to 2
-		lerp(-config.startPosition[2] * .5, -config.startPosition[2] * config.throwForce, Math.random()),
+		lerp(-config.startPosition[0] * .5, -config.startPosition[0] * config.throwForce, seededRandom(die.random_seed, 4)),
+		lerp(-config.startPosition[1], -config.startPosition[1] * 2, seededRandom(die.random_seed, 5)), // limit the y force to 2
+		lerp(-config.startPosition[2] * .5, -config.startPosition[2] * config.throwForce, seededRandom(die.random_seed, 6)),
 	))
 
-	const flippy = Math.random() > .5 ? 1 : -1 // random positive or negative number
-	const spinny = lerp(config.spinForce * .5, config.spinForce, Math.random())
+	const flippy = seededRandom(die.random_seed, 7)
+	const spinny = lerp(config.spinForce * .5, config.spinForce, seededRandom(die.random_seed, 8))
 	const force = new Ammo.btVector3(
 		spinny * flippy,
 		spinny * -flippy, // flip the flippy to avoid gimble lock
@@ -504,6 +510,7 @@ const clearDice = () => {
 	if(diceBufferView.byteLength){
 		diceBufferView.fill(0)
 	}
+	bodiesQueue = []
 	stopLoop = true
 	// clear all bodies
 	bodies.forEach(body => physicsWorld.removeRigidBody(body))
@@ -511,6 +518,7 @@ const clearDice = () => {
 	// clear cache arrays
 	bodies = []
 	sleepingBodies = []
+	physicsWorld.resetLocalTime();
 }
 
 
@@ -529,9 +537,18 @@ const setupPhysicsWorld = () => {
 
 	return World
 }
-
+let simulation_frame = 0
 const update = (delta) => {
 	// step world
+
+	// Add a die if needed
+	if (simulation_frame % frame_delay == 0 && bodiesQueue.length > 0){
+		// space out the addition of rigid bodies so they don't explode on each other
+		const newDie = bodiesQueue.shift();
+		physicsWorld.addRigidBody(newDie);
+		bodies.push(newDie);
+		rollDie(newDie)
+	}
 	const deltaTime = delta / 1000
 	
 	// console.time("stepSimulation")
@@ -633,16 +650,18 @@ const update = (delta) => {
 let last = new Date().getTime()
 const loop = () => {
 	let now = new Date().getTime()
-	const delta = now - last
+	const delta = 16
 	last = now
 
 	if(!stopLoop && diceBufferView.byteLength) {
 		// console.time("physics")
 		update(delta)
+		simulation_frame = simulation_frame+1
 		// console.timeEnd("physics")
 			worldWorkerPort.postMessage({
 				action: 'updates',
 				diceBuffer: diceBufferView.buffer
 			}, [diceBufferView.buffer])
-	}
+	} else {
+		simulation_frame=0;}
 }

@@ -213,10 +213,7 @@ class WorldOnscreen {
 	add(options) {
 		// loadDie allows you to specify sides(dieType) and theme and returns the options you passed in
 		Dice.loadDie(options, this.#scene).then(resp => {
-			// space out adding the dice so they don't lump together too much
-			this.#dieRollTimer.push(setTimeout(() => {
-				this.#add(resp)
-			}, this.#count++ * this.config.delay))
+		this.#add(resp);
 		})
 	}
 
@@ -268,6 +265,7 @@ class WorldOnscreen {
 				newStartPoint: options.newStartPoint,
 				theme: options.theme,
 				meshName: options.meshName,
+				random_seed : options.random_seed
 			}
 		})
 	
